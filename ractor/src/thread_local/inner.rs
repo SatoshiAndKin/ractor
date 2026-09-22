@@ -22,7 +22,7 @@ use super::ThreadLocalActorSpawner;
 use crate::actor::actor_cell;
 use crate::actor::actor_cell::ActorPortSet;
 use crate::actor::actor_properties::ActorProperties;
-use crate::actor::actor_properties::MuxedMessage;
+use crate::actor::actor_properties::{MessageReceiver, MuxedMessage, SupervisionReceiver};
 use crate::actor::get_panic_string;
 use crate::actor::messages::StopMessage;
 use crate::actor::ActorLifecycleGuard;
@@ -89,8 +89,8 @@ impl ActorProperties {
         Self,
         OneshotReceiver<Signal>,
         OneshotReceiver<StopMessage>,
-        mpsc::MpscUnboundedReceiver<SupervisionEvent>,
-        mpsc::MpscUnboundedReceiver<MuxedMessage>,
+        SupervisionReceiver,
+        MessageReceiver,
     )
     where
         TActor: crate::thread_local::ThreadLocalActor,

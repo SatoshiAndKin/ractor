@@ -42,3 +42,16 @@ Existing tests cover cluster serialization, process-group notifications,
 thread-local actors, cancellation, supervision failures, and output ports.
 
 OpenAI Codex authored this repair and its regressions at the owner's request.
+
+Application integration at flashprofits-monorepo revision `f54f960a` passes
+1,917 default tests and 1,963 all-feature tests. All 18 GPU checks run; strict
+release Clippy, the GPU benchmark build, and the offline read-only Linux image
+check also pass. The application pins repair commit `08db925`.
+
+The repeated diagnostic still exceeds its 7 GiB RSS guard at 7,631,011,840 bytes.
+Its jemalloc profile identifies much smaller queue blocks, but captures a
+different workload progress point and head. The normal mimalloc capture reaches
+the unchanged 45-minute ceiling with no complete corpus or benchmark winner.
+Its 8 GiB cgroup records 8,128,217,088 peak bytes and no OOM event. Neither run
+proves full-workload memory or timing acceptance. The focused queue repair does
+not by itself make application PR113 ready to merge.

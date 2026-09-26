@@ -15,13 +15,12 @@ use std::sync::Arc;
 #[cfg(feature = "async-std")]
 use futures::FutureExt;
 
-use super::actor_properties::MuxedMessage;
+use super::actor_properties::{MessageReceiver, MuxedMessage, SupervisionReceiver};
 use super::messages::Signal;
 use super::messages::StopMessage;
 use super::SupervisionEvent;
 use crate::actor::actor_properties::ActorProperties;
 use crate::concurrency::JoinHandle;
-use crate::concurrency::MpscUnboundedReceiver as InputPortReceiver;
 use crate::concurrency::OneshotReceiver;
 use crate::errors::MessagingErr;
 #[cfg(feature = "cluster")]
@@ -68,9 +67,9 @@ pub(crate) struct ActorPortSet {
     /// The inner stop port
     pub(crate) stop_rx: OneshotReceiver<StopMessage>,
     /// The inner supervisor port
-    pub(crate) supervisor_rx: InputPortReceiver<SupervisionEvent>,
+    pub(crate) supervisor_rx: SupervisionReceiver,
     /// The inner message port
-    pub(crate) message_rx: InputPortReceiver<MuxedMessage>,
+    pub(crate) message_rx: MessageReceiver,
 }
 
 impl Drop for ActorPortSet {
@@ -165,10 +164,10 @@ impl ActorPortSet {
                     stop.map(ActorPortMessage::Stop).map_err(|_| MessagingErr::ChannelClosed)
                 }
                 supervision = self.supervisor_rx.recv().fuse() => {
-                    supervision.map(ActorPortMessage::Supervision).ok_or(MessagingErr::ChannelClosed)
+                    supervision.map(|event| ActorPortMessage::Supervision(*event)).ok_or(MessagingErr::ChannelClosed)
                 }
                 message = self.message_rx.recv().fuse() => {
-                    message.map(ActorPortMessage::Message).ok_or(MessagingErr::ChannelClosed)
+                    message.map(|message| ActorPortMessage::Message(*message)).ok_or(MessagingErr::ChannelClosed)
                 }
             }
         }
@@ -182,10 +181,10 @@ impl ActorPortSet {
                     stop.map(ActorPortMessage::Stop).map_err(|_| MessagingErr::ChannelClosed)
                 }
                 supervision = self.supervisor_rx.recv() => {
-                    supervision.map(ActorPortMessage::Supervision).ok_or(MessagingErr::ChannelClosed)
+                    supervision.map(|event| ActorPortMessage::Supervision(*event)).ok_or(MessagingErr::ChannelClosed)
                 }
                 message = self.message_rx.recv() => {
-                    message.map(ActorPortMessage::Message).ok_or(MessagingErr::ChannelClosed)
+                    message.map(|message| ActorPortMessage::Message(*message)).ok_or(MessagingErr::ChannelClosed)
                 }
             }
         }

@@ -3,8 +3,10 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use ractor::{Actor, ActorProcessingErr, ActorRef, SupervisionEvent};
+use tokio::sync::oneshot;
 
 struct CountingSystem;
 static LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
@@ -100,6 +102,126 @@ async fn idle_linked_actors_fit_the_retained_heap_budget() {
     assert!(
         retained <= ACTORS * BYTES_PER_ACTOR,
         "idle actors retain {retained} bytes; budget is {}",
+        ACTORS * BYTES_PER_ACTOR
+    );
+}
+
+struct Resident;
+struct ReadState(oneshot::Sender<(u64, u8)>);
+#[cfg(feature = "cluster")]
+impl ractor::Message for ReadState {}
+
+#[repr(align(16))]
+struct ResidentState {
+    bytes: [u8; 448],
+    replies: u64,
+    stopped: Arc<AtomicUsize>,
+}
+
+#[cfg_attr(feature = "async-trait", ractor::async_trait)]
+impl Actor for Resident {
+    type Msg = ReadState;
+    type State = ResidentState;
+    type Arguments = (u8, Arc<AtomicUsize>);
+
+    async fn pre_start(
+        &self,
+        _: ActorRef<ReadState>,
+        (seed, stopped): Self::Arguments,
+    ) -> Result<ResidentState, ActorProcessingErr> {
+        Ok(ResidentState {
+            bytes: [seed; 448],
+            replies: 0,
+            stopped,
+        })
+    }
+
+    async fn handle(
+        &self,
+        _: ActorRef<ReadState>,
+        ReadState(reply): ReadState,
+        state: &mut ResidentState,
+    ) -> Result<(), ActorProcessingErr> {
+        state.replies += 1;
+        assert!(state.bytes.iter().all(|byte| *byte == state.bytes[0]));
+        reply.send((state.replies, state.bytes[0])).unwrap();
+        Ok(())
+    }
+
+    async fn handle_supervisor_evt(
+        &self,
+        _: ActorRef<ReadState>,
+        _: SupervisionEvent,
+        _: &mut ResidentState,
+    ) -> Result<(), ActorProcessingErr> {
+        Ok(())
+    }
+
+    async fn post_stop(
+        &self,
+        _: ActorRef<ReadState>,
+        state: &mut ResidentState,
+    ) -> Result<(), ActorProcessingErr> {
+        assert_eq!(state.replies, 2);
+        assert!(state.bytes.iter().all(|byte| *byte == state.bytes[0]));
+        state.stopped.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+async fn read_state(actor: &ActorRef<ReadState>) -> (u64, u8) {
+    let (send, receive) = oneshot::channel();
+    actor.cast(ReadState(send)).unwrap();
+    receive.await.unwrap()
+}
+
+#[tokio::test]
+async fn started_stateful_actors_fit_the_retained_heap_budget() {
+    const ACTORS: usize = 1024;
+    // Include the real running loop and its state, ports, task, queues and
+    // supervision links. A reply proves post_start and message handling ran.
+    const BYTES_PER_ACTOR: usize = 3584;
+    let stopped = Arc::new(AtomicUsize::new(0));
+    let (parent, parent_task) = Actor::spawn(None, Resident, (0, stopped.clone()))
+        .await
+        .unwrap();
+    assert_eq!(read_state(&parent).await, (1, 0));
+    let (warm, warm_task) =
+        Actor::spawn_linked(None, Resident, (255, stopped.clone()), parent.get_cell())
+            .await
+            .unwrap();
+    assert_eq!(read_state(&warm).await, (1, 255));
+    assert_eq!(read_state(&warm).await, (2, 255));
+    warm.stop_and_wait(None, None).await.unwrap();
+    warm_task.await.unwrap();
+    drop(warm);
+    let mut actors = Vec::with_capacity(ACTORS);
+    let before = LIVE_BYTES.load(Ordering::Relaxed);
+    for index in 0..ACTORS {
+        let seed = (index % 251) as u8;
+        let (actor, task) =
+            Actor::spawn_linked(None, Resident, (seed, stopped.clone()), parent.get_cell())
+                .await
+                .unwrap();
+        assert_eq!(read_state(&actor).await, (1, seed));
+        actors.push((actor, task));
+    }
+    // Supervision has priority over ordinary messages, so this also drains
+    // queued ActorStarted notifications before taking the allocation snapshot.
+    assert_eq!(read_state(&parent).await, (2, 0));
+    let retained = LIVE_BYTES.load(Ordering::Relaxed).saturating_sub(before);
+    eprintln!("{ACTORS} running stateful actors retain {retained} requested bytes");
+    for (index, (actor, task)) in actors.into_iter().enumerate() {
+        assert_eq!(read_state(&actor).await, (2, (index % 251) as u8));
+        actor.stop_and_wait(None, None).await.unwrap();
+        task.await.unwrap();
+    }
+    parent.stop_and_wait(None, None).await.unwrap();
+    parent_task.await.unwrap();
+    assert_eq!(stopped.load(Ordering::Relaxed), ACTORS + 2);
+    assert!(
+        retained <= ACTORS * BYTES_PER_ACTOR,
+        "running stateful actors retain {retained} bytes; budget is {}",
         ACTORS * BYTES_PER_ACTOR
     );
 }

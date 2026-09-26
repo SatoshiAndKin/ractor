@@ -55,3 +55,46 @@ the unchanged 45-minute ceiling with no complete corpus or benchmark winner.
 Its 8 GiB cgroup records 8,128,217,088 peak bytes and no OOM event. Neither run
 proves full-workload memory or timing acceptance. The focused queue repair does
 not by itself make application PR113 ready to merge.
+
+## Running actor port storage
+
+The retained application profile also attributes 1,069,082,866 sampled heap
+bytes to actor tasks and processing-loop allocations. The private runtime moved
+its port set through nested asynchronous frames, retaining storage for completed
+moves. The running loop now borrows the task's port set. The task explicitly
+drops the receivers before publishing its termination event, preserving the
+previous queue-closure and supervision order. No queue, message, scheduling,
+public API, or per-message allocation policy changes.
+
+The new regression starts 1,024 linked actors with 464-byte states and exchanges
+real messages before measuring. It checks exact state and reply sequence again
+after the snapshot and verifies every post-stop hook. System-allocator counts
+include nested allocations, ports, queues, tasks, state, and supervision links:
+
+| Tokio configuration | Before | After |
+| --- | ---: | ---: |
+| Ordinary | 4,213,020 | 4,188,444 |
+| Instrumented (`--cfg tokio_unstable`) | 5,654,812 | 4,598,044 |
+
+The instrumented configuration used by Flashprofits retains 18.7% fewer requested
+bytes in this fixture. The ordinary configuration saves 0.6%. Both final local
+budgets fail before the repair. Cluster builds use a separate bound because
+their message variants are larger; that configuration is a passing regression
+control before and after. These counts are not RSS or complete-catalog evidence.
+
+On `nightly-2026-08-25`, the default/output-port suite and the same suite with
+`RUSTFLAGS='--cfg tokio_unstable'` each pass 180 tests. Expanded Tokio features
+`cluster,monitors,output-port-v2,async-trait,actor-macros,blanket_serde` pass 238
+tests. The existing no-default-features async-std configuration passes 225.
+The new allocation tests are Tokio-only. Formatting passes. Stable all-target,
+all-feature Clippy passes with the four previously recorded upstream lint
+classes and `io_other_error` allowed; that additional existing error is in
+`ractor/src/macros/tests.rs:67`. No source allowances were added.
+
+The instrumented release small-message benchmark compares the previous runtime
+and this repair with 20 samples, one second of warm-up, and three seconds of
+measurement. The 8-byte case takes 1.85% longer (1.82% lower throughput). The
+16-byte case has no statistically significant change; the 32-byte difference
+is within Criterion's noise threshold. Preserve this small measured cost.
+Application integration and the original bounded production gates remain
+required before claiming production acceptance.

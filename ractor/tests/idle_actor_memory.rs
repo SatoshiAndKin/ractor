@@ -181,9 +181,12 @@ async fn started_stateful_actors_fit_the_retained_heap_budget() {
     // Include the real running loop and its state, ports, task, queues and
     // supervision links. A reply proves post_start and message handling ran.
     // Production's instrumented Tokio ports retain additional tracing state.
-    // Both bounds include that configuration's nested allocations, and both
-    // must fail against the pinned implementation before the lifetime repair.
-    const BYTES_PER_ACTOR: usize = if cfg!(tokio_unstable) { 4608 } else { 4096 };
+    // Cluster support also enlarges the message and supervision variants.
+    // The non-cluster budgets fail on the pinned implementation; the cluster
+    // configuration is a lifecycle and retained-allocation regression control.
+    const BYTES_PER_ACTOR: usize = 4096
+        + if cfg!(tokio_unstable) { 512 } else { 0 }
+        + if cfg!(feature = "cluster") { 1024 } else { 0 };
     let stopped = Arc::new(AtomicUsize::new(0));
     let (parent, parent_task) = Actor::spawn(None, Resident, (0, stopped.clone()))
         .await

@@ -8,43 +8,31 @@ on:
 
 jobs:
   coverage:
-    name: Coverage using xtask
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable]
-    runs-on: ${{ matrix.os }}
+    name: Coverage using LLVM
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v7
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ matrix.rust }}
-          override: true
           components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Download grcov
-        run: |
-          mkdir -p "${HOME}/.local/bin"
-          curl -sL https://github.com/mozilla/grcov/releases/download/v0.8.10/grcov-x86_64-unknown-linux-gnu.tar.bz2 | tar jxf - -C "${HOME}/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Exercise actor macros for coverage
-        env:
-          CARGO_INCREMENTAL: 0
-          RUSTFLAGS: -Cinstrument-coverage
-          LLVM_PROFILE_FILE: cargo-test-%p-%m.profraw
-        run: cargo test --package ractor --features actor-macros --test actor_macros
-
-      - name: Run xtask coverage
-        uses: actions-rs/cargo@v1
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
         with:
-          command: run
-          args: --bin xtask coverage
+          tool: cargo-llvm-cov@0.8.4
+
+      - name: Run instrumented tests and export LCOV
+        run: |
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --no-report --package ractor --features actor-macros --test actor_macros
+          cargo llvm-cov --no-report --workspace
+          mkdir -p coverage
+          cargo llvm-cov report --lcov --ignore-filename-regex '(^|/)xtask/' --output-path coverage/tests.lcov
 
       - name: Check whether Codecov is configured
         id: codecov
@@ -60,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ractor-coverage
-          path: coverage/*.lcov
+          path: coverage/tests.lcov
           if-no-files-found: error
 
       - name: Upload to codecov.io
@@ -68,7 +56,7 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true # optional (default = false)
-          files: coverage/*.lcov
+          files: coverage/tests.lcov
           token: ${{ secrets.CODECOV_TOKEN }} # required
           verbose: true # optional (default = false)
           name: ractor # optional

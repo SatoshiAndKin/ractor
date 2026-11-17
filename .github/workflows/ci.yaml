@@ -131,6 +131,32 @@ jobs:
         with:
           command: test
 
+  retained-actor-memory:
+    name: Retained actor memory
+    runs-on: macos-15
+    env:
+      MEMORY_RUST: nightly-2026-08-25
+    steps:
+      - uses: actions/checkout@main
+
+      - name: Install the compiler used to set the allocation budgets
+        run: rustup toolchain install "$MEMORY_RUST" --profile minimal
+
+      - name: Resolve the Tokio version used to verify the budgets
+        run: cargo "+$MEMORY_RUST" update --package tokio --precise 1.54.1
+
+      # Both tests read the same process-wide allocator counter.
+      - name: Measure retained allocations
+        run: cargo "+$MEMORY_RUST" test --locked --release -p ractor --test idle_actor_memory -- --ignored --test-threads=1 --nocapture
+
+      - name: Measure retained allocations with cluster support
+        run: cargo "+$MEMORY_RUST" test --locked --release -p ractor --features cluster --test idle_actor_memory -- --ignored --test-threads=1 --nocapture
+
+      - name: Measure retained allocations with instrumented Tokio
+        env:
+          RUSTFLAGS: --cfg tokio_unstable
+        run: cargo "+$MEMORY_RUST" test --locked --release -p ractor --test idle_actor_memory -- --ignored --test-threads=1 --nocapture
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

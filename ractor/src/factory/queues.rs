@@ -292,31 +292,15 @@ where
 
     /// Pop the next message from the front of the queue
     fn pop_front(&mut self) -> Option<Job<TKey, TMsg>> {
-        for i in 0..NUM_PRIORITIES {
-            if let Some(r) = self.queues[i].pop_front() {
-                return Some(r);
-            }
-        }
-        None
+        self.queues.iter_mut().find_map(VecDeque::pop_front)
     }
 
     fn discard_oldest(&mut self) -> Option<Job<TKey, TMsg>> {
-        for i in (0..NUM_PRIORITIES).rev() {
-            if let Some(r) = self.queues[i].pop_front() {
-                return Some(r);
-            }
-        }
-        None
+        self.queues.iter_mut().rev().find_map(VecDeque::pop_front)
     }
 
     fn peek(&self) -> Option<&Job<TKey, TMsg>> {
-        for i in 0..NUM_PRIORITIES {
-            let maybe = self.queues[i].front();
-            if maybe.is_some() {
-                return maybe;
-            }
-        }
-        None
+        self.queues.iter().find_map(VecDeque::front)
     }
 
     /// Push an item to the back of the queue

@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir -p "${HOME}/.local/bin"
           curl -sL https://github.com/mozilla/grcov/releases/download/v0.8.10/grcov-x86_64-unknown-linux-gnu.tar.bz2 | tar jxf - -C "${HOME}/.local/bin"
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Exercise actor macros for coverage
         env:
@@ -46,8 +46,25 @@ jobs:
           command: run
           args: --bin xtask coverage
 
+      - name: Check whether Codecov is configured
+        id: codecov
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -n "$CODECOV_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save the coverage report
+        if: steps.codecov.outputs.configured != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ractor-coverage
+          path: coverage/*.lcov
+          if-no-files-found: error
 
       - name: Upload to codecov.io
+        if: steps.codecov.outputs.configured == 'true'
         uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true # optional (default = false)

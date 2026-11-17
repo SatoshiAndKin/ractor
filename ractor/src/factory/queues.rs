@@ -321,8 +321,8 @@ where
         let mut num_removed = 0;
 
         // scan backlog for expired jobs and pop, discard, and drop them
-        for i in 0..NUM_PRIORITIES {
-            self.queues[i].retain_mut(|queued_item| {
+        for queue in &mut self.queues {
+            queue.retain_mut(|queued_item| {
                 if queued_item.is_expired() {
                     if let Some(handler) = discard_handler {
                         handler.discard(DiscardReason::TtlExpired, queued_item);

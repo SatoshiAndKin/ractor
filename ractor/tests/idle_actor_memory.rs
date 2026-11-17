@@ -66,6 +66,7 @@ impl Actor for Idle {
 }
 
 #[tokio::test]
+#[ignore = "run serially with the pinned retained-memory toolchain"]
 async fn idle_linked_actors_fit_the_retained_heap_budget() {
     const ACTORS: usize = 1024;
     // Keep the per-actor infrastructure below 4 KiB, including both empty
@@ -176,6 +177,7 @@ async fn read_state(actor: &ActorRef<ReadState>) -> (u64, u8) {
 }
 
 #[tokio::test]
+#[ignore = "run serially with the pinned retained-memory toolchain"]
 async fn started_stateful_actors_fit_the_retained_heap_budget() {
     const ACTORS: usize = 1024;
     // Include the real running loop and its state, ports, task, queues and

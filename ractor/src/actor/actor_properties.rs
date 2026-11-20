@@ -34,6 +34,9 @@ pub(crate) enum MuxedMessage {
     Message(BoxedMessage),
 }
 
+pub(crate) type SupervisionReceiver = InputPortReceiver<Box<SupervisionEvent>>;
+pub(crate) type MessageReceiver = InputPortReceiver<Box<MuxedMessage>>;
+
 const MESSAGE_ADMISSION_CLOSED: usize = 1usize << (usize::BITS - 1);
 const DRAIN_MARKER_SENT: usize = 1usize << (usize::BITS - 2);
 const MESSAGE_ADMISSION_COUNT_MASK: usize = DRAIN_MARKER_SENT - 1;
@@ -59,8 +62,10 @@ pub(crate) struct ActorProperties {
     pub(crate) wait_handler: mpsc::Notify,
     pub(crate) signal: Mutex<Option<OneshotInputPort<Signal>>>,
     pub(crate) stop: Mutex<Option<OneshotInputPort<StopMessage>>>,
-    pub(crate) supervision: InputPort<SupervisionEvent>,
-    pub(crate) message: InputPort<MuxedMessage>,
+    // Store pointers in the eagerly allocated queue blocks. Large event and
+    // message envelopes need storage only when a message is actually queued.
+    pub(crate) supervision: InputPort<Box<SupervisionEvent>>,
+    pub(crate) message: InputPort<Box<MuxedMessage>>,
     pub(crate) message_admission: AtomicUsize,
     pub(crate) tree: SupervisionTree,
     pub(crate) type_id: std::any::TypeId,
@@ -87,8 +92,8 @@ impl ActorProperties {
         Self,
         OneshotReceiver<Signal>,
         OneshotReceiver<StopMessage>,
-        InputPortReceiver<SupervisionEvent>,
-        InputPortReceiver<MuxedMessage>,
+        SupervisionReceiver,
+        MessageReceiver,
     )
     where
         TActor: Actor,
@@ -103,8 +108,8 @@ impl ActorProperties {
         Self,
         OneshotReceiver<Signal>,
         OneshotReceiver<StopMessage>,
-        InputPortReceiver<SupervisionEvent>,
-        InputPortReceiver<MuxedMessage>,
+        SupervisionReceiver,
+        MessageReceiver,
     )
     where
         TActor: Actor,
@@ -162,7 +167,9 @@ impl ActorProperties {
         &self,
         message: SupervisionEvent,
     ) -> Result<(), MessagingErr<SupervisionEvent>> {
-        self.supervision.send(message).map_err(|e| e.into())
+        self.supervision
+            .send(Box::new(message))
+            .map_err(|e| MessagingErr::SendErr(*e.0))
     }
 
     pub(crate) fn send_message<TMessage>(
@@ -208,8 +215,8 @@ impl ActorProperties {
             .box_message(&self.id)
             .map_err(|_e| MessagingErr::InvalidActorType)?;
         self.message
-            .send(MuxedMessage::Message(boxed))
-            .map_err(|e| match e.0 {
+            .send(Box::new(MuxedMessage::Message(boxed)))
+            .map_err(|e| match *e.0 {
                 MuxedMessage::Message(m) => MessagingErr::SendErr(TMessage::from_boxed(m).unwrap()),
                 _ => panic!("Expected a boxed message but got a drain message"),
             })
@@ -259,7 +266,7 @@ impl ActorProperties {
                 Ok(_) => {
                     return self
                         .message
-                        .send(MuxedMessage::Drain)
+                        .send(Box::new(MuxedMessage::Drain))
                         .map_err(|_| MessagingErr::SendErr(()));
                 }
                 Err(observed) => state = observed,
@@ -308,8 +315,8 @@ impl ActorProperties {
         };
         Ok(self
             .message
-            .send(MuxedMessage::Message(boxed))
-            .map_err(|e| match e.0 {
+            .send(Box::new(MuxedMessage::Message(boxed)))
+            .map_err(|e| match *e.0 {
                 MuxedMessage::Message(m) => MessagingErr::SendErr(m.serialized_msg.unwrap()),
                 _ => panic!("Expected a boxed message but got a drain message"),
             })?)
@@ -361,5 +368,67 @@ impl ActorProperties {
         self.wait_handler.notify_waiters();
         // Preserve one permit for a waiter created after the actor stopped.
         self.wait_handler.notify_one();
+    }
+}
+
+#[cfg(test)]
+mod queue_error_tests {
+    use std::sync::Arc;
+
+    use super::ActorProperties;
+    use crate::{Actor, ActorProcessingErr, ActorRef, MessagingErr, SupervisionEvent};
+
+    struct Owned(Arc<Vec<u8>>);
+    #[cfg(feature = "cluster")]
+    impl crate::Message for Owned {}
+
+    struct Receiver;
+    #[cfg_attr(feature = "async-trait", crate::async_trait)]
+    impl Actor for Receiver {
+        type Msg = Owned;
+        type State = ();
+        type Arguments = ();
+
+        async fn pre_start(&self, _: ActorRef<Owned>, _: ()) -> Result<(), ActorProcessingErr> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn closed_message_queue_returns_original_owned_payload() {
+        let (properties, _signal, _stop, _supervision, messages) =
+            ActorProperties::new::<Receiver>(None);
+        // Keep lifecycle admission open: exercise the actual channel send error,
+        // not the early rejection for a stopped actor.
+        drop(messages);
+        let value = Arc::new(vec![17; 1024]);
+        match properties.send_message(Owned(value.clone())) {
+            Err(MessagingErr::SendErr(Owned(returned))) => assert!(Arc::ptr_eq(&value, &returned)),
+            _ => panic!("The closed queue must return the original payload"),
+        }
+        assert_eq!(Arc::strong_count(&value), 1);
+    }
+
+    #[test]
+    fn closed_supervision_queue_returns_original_event_and_reason() {
+        let (properties, _signal, _stop, supervision, _messages) =
+            ActorProperties::new::<Receiver>(None);
+        drop(supervision);
+        let (cell, _ports) = crate::ActorCell::new::<Receiver>(None).unwrap();
+        let reason = String::from("original-owned-stop-reason");
+        let allocation = reason.as_ptr();
+        let event = SupervisionEvent::ActorTerminated(cell.clone(), None, Some(reason));
+        match properties.send_supervisor_evt(event) {
+            Err(MessagingErr::SendErr(SupervisionEvent::ActorTerminated(
+                returned,
+                None,
+                Some(reason),
+            ))) => {
+                assert_eq!(returned.get_id(), cell.get_id());
+                assert_eq!(reason, "original-owned-stop-reason");
+                assert_eq!(reason.as_ptr(), allocation);
+            }
+            _ => panic!("The closed queue must return the original supervision event"),
+        }
     }
 }

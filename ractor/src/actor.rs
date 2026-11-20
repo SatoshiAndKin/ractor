@@ -826,9 +826,13 @@ where
         // run the processing loop, backgrounding the work
         let handle = crate::concurrency::spawn_named(actor_ref.get_name().as_deref(), async move {
             let myself = actor_ref.clone();
-            let evt = match Self::processing_loop(ports, &mut state, &handler, actor_ref, id, name)
-                .await
-            {
+            let result =
+                Self::processing_loop(&mut ports, &mut state, &handler, actor_ref, id, name).await;
+            // Close the receiver ports before publishing termination, just as
+            // when processing_loop owned them. Borrowing keeps their storage
+            // in one place throughout the actor's running lifetime.
+            drop(ports);
+            let evt = match result {
                 Ok(exit_reason) => SupervisionEvent::ActorTerminated(
                     myself.get_cell(),
                     Some(BoxedState::new(state)),
@@ -852,7 +856,7 @@ where
 
     #[tracing::instrument(name = "Actor", skip(ports, state, handler, myself, _id, _name), fields(id = _id.to_string(), name = _name))]
     async fn processing_loop(
-        mut ports: ActorPortSet,
+        ports: &mut ActorPortSet,
         state: &mut TActor::State,
         handler: &TActor,
         myself: ActorRef<TActor::Msg>,
@@ -883,7 +887,7 @@ where
         // Box the processing loop once per actor. This indirection prevents deeply
         // nested actor graphs from overflowing rustc's layout query depth without allocating
         // a new box for every message handled by the loop.
-        let future = Box::pin(async move {
+        let future = Box::pin(async {
             // the message processing loop. If we get an exit flag, try and capture the exit reason if there
             // is one
             loop {
@@ -891,12 +895,12 @@ where
                     should_exit,
                     exit_reason,
                     was_killed,
-                } = Self::process_message(&myself, state, handler, &mut ports)
+                } = Self::process_message(&myself, state, handler, ports)
                     .await
                     .map_err(ActorErr::Failed)?;
                 // processing loop exit
                 if should_exit {
-                    return Ok((state, exit_reason, was_killed, ports));
+                    return Ok((state, exit_reason, was_killed));
                 }
             }
         });
@@ -909,7 +913,7 @@ where
         // set status to stopping
         myself_clone.set_status(ActorStatus::Stopping);
 
-        let (exit_state, exit_reason, was_killed, mut ports) = loop_done??;
+        let (exit_state, exit_reason, was_killed) = loop_done??;
 
         // if we didn't exit in error mode, call `post_stop`
         if !was_killed {

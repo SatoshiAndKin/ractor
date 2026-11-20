@@ -1144,7 +1144,7 @@ fn test_idempotent_membership_calls_preserve_notification_payloads() {
         .try_recv()
         .expect("join notification missing");
     assert!(matches!(
-        first_join,
+        *first_join,
         SupervisionEvent::ProcessGroupChanged(pg::GroupChangeMessage::Join(_, _, actors))
             if actors.len() == 2 && actors.iter().all(|actor| actor.get_id() == member.get_id())
     ));
@@ -1153,7 +1153,7 @@ fn test_idempotent_membership_calls_preserve_notification_payloads() {
         .try_recv()
         .expect("idempotent join notification missing");
     assert!(matches!(
-        second_join,
+        *second_join,
         SupervisionEvent::ProcessGroupChanged(pg::GroupChangeMessage::Join(_, _, actors))
             if actors.len() == 1 && actors[0].get_id() == member.get_id()
     ));
@@ -1166,7 +1166,7 @@ fn test_idempotent_membership_calls_preserve_notification_payloads() {
         .try_recv()
         .expect("leave notification missing");
     assert!(matches!(
-        first_leave,
+        *first_leave,
         SupervisionEvent::ProcessGroupChanged(pg::GroupChangeMessage::Leave(_, _, actors))
             if actors.len() == 2 && actors.iter().all(|actor| actor.get_id() == member.get_id())
     ));
@@ -1175,7 +1175,7 @@ fn test_idempotent_membership_calls_preserve_notification_payloads() {
         .try_recv()
         .expect("idempotent leave notification missing");
     assert!(matches!(
-        second_leave,
+        *second_leave,
         SupervisionEvent::ProcessGroupChanged(pg::GroupChangeMessage::Leave(_, _, actors))
             if actors.len() == 1 && actors[0].get_id() == member.get_id()
     ));

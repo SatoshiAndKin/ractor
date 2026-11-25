@@ -73,7 +73,7 @@ Install `ractor` by adding the following to your Cargo.toml dependencies.
 ractor = "0.16"
 ```
 
-The minimum supported Rust version (MSRV) of `ractor` is `1.85`.
+CI tracks the latest stable Rust release. The current minimum is Rust 1.100.
 
 ## Features
 

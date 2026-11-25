@@ -15,7 +15,7 @@
 //! ractor = "0.16"
 //! ```
 //!
-//! The minimum supported Rust version (MSRV) is 1.85.
+//! CI tracks stable Rust. The current minimum is Rust 1.100.
 //!
 //! ## Getting started
 //!

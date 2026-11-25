@@ -271,7 +271,7 @@ impl ActorProperties {
         self.close_message_admission();
         let _ = self
             .status
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |f| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |f| {
                 if f < (ActorStatus::Stopping as u8) {
                     Some(ActorStatus::Draining as u8)
                 } else {

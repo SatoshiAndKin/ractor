@@ -16,8 +16,8 @@ defaults:
     shell: bash
 
 jobs:
-  msrv:
-    name: Rust 1.85 MSRV
+  feature-checks:
+    name: Stable Rust feature and target checks
     runs-on:
       group: ski-ci-public-linux
       labels: ski-kvm-public-pr
@@ -26,10 +26,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Rust 1.85
+      - name: Install stable Rust
         uses: SatoshiAndKin/ractor/.github/actions/setup-linux-rust@9c3c17b6acd68bedf821622846bd7f8cda6c1c54
         with:
-          toolchain: '1.85.0'
+          toolchain: stable
           targets: wasm32-unknown-unknown
 
       - name: Check workspace defaults and all targets

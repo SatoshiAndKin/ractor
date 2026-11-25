@@ -35,6 +35,8 @@ pub type FactoryMessagingErr<TKey, TMsg> = MessagingErr<FactoryMessage<TKey, TMs
 /// [`MessagingErr::SendErr`] still owns the recoverable [`FactoryMessage`].
 pub type FactorySendResult<TKey, TMsg> = Result<(), Box<FactoryMessagingErr<TKey, TMsg>>>;
 
+// Keep returning the original factory message on failure.
+#[allow(clippy::result_large_err)]
 impl<TKey, TMsg> ActorRef<FactoryMessage<TKey, TMsg>>
 where
     TKey: JobKey,

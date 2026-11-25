@@ -10,12 +10,12 @@ concurrency:
 
 jobs:
   bench-base:
-    name: Benchmark main
+    name: Benchmark base
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -23,18 +23,24 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Run benchmarks on main
+      - name: Resolve the legacy WASM dependency for the native baseline
+        # Cargo resolves target-specific dependencies even for Linux builds.
+        # Keep the source of the benchmark intact.
+        run: |
+          sed -i '/^tokio_with_wasm = /s/version = "0\.10\.1"/version = "0.9.2"/' ractor/Cargo.toml
+
+      - name: Run benchmarks on the base revision
         run: |
           cargo bench -p ractor \
             --bench actor \
             --bench async_traits \
             --bench factory \
             --bench simple_advanced_benchmarks \
-            -- --save-baseline main
+            -- --save-baseline base
           if [ -f ractor_cluster/benches/message_serialization.rs ]; then
             cargo bench -p ractor_cluster \
               --bench message_serialization \
-              -- --save-baseline main
+              -- --save-baseline base
           fi
         env:
           CI: 1
@@ -42,14 +48,14 @@ jobs:
       - name: Install critcmp
         run: cargo install critcmp --locked
 
-      - name: Export main baseline
-        run: critcmp --export main > main.json
+      - name: Export base baseline
+        run: critcmp --export base > base.json
 
-      - name: Upload main baseline
+      - name: Upload base baseline
         uses: actions/upload-artifact@v7
         with:
-          name: bench-baseline-main
-          path: main.json
+          name: bench-baseline-base
+          path: base.json
           retention-days: 1
 
   bench-pr:
@@ -67,10 +73,10 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Download main baseline
+      - name: Download base baseline
         uses: actions/download-artifact@v8
         with:
-          name: bench-baseline-main
+          name: bench-baseline-base
 
       - name: Run benchmarks on PR branch
         run: |
@@ -94,8 +100,8 @@ jobs:
         run: |
           # run the comparison twice: default multi-column output and a flattened
           # list view for easier per-benchmark deltas
-          RESULT=$(critcmp main.json pr)
-          LIST=$(critcmp main.json pr --list)
+          RESULT=$(critcmp base.json pr)
+          LIST=$(critcmp base.json pr --list)
           echo "$RESULT"
           echo
           echo "Flat results (see per-benchmark deltas):"
@@ -124,7 +130,7 @@ jobs:
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           edit-mode: replace
           body: |
-            ## Benchmark Comparison (PR vs `main`)
+            ## Benchmark Comparison (PR vs base)
 
             <details>
             <summary>Results (collapse to hide)</summary>

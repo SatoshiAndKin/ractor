@@ -236,7 +236,7 @@ Default features: `tokio_runtime`, `message_span_propogation`
 
 ### Runtime Requirements
 
-- MSRV: Rust 1.85
+- CI tracks stable Rust. The current minimum is Rust 1.100.
 - Thread-local actors REQUIRE tokio runtime with `rt` feature
 - WASM support available (target `wasm32-unknown-unknown`)
 

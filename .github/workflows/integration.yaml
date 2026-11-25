@@ -5,55 +5,22 @@ on:
       - main
     paths:
       - 'ractor_cluster*/**'
+      - .github/workflows/integration.yaml
+      - .github/workflows/integration-reviewed-linux.yaml
   pull_request:
     types: [opened, reopened, synchronize]
     paths:
       - 'ractor_cluster*/**'
+      - .github/workflows/integration.yaml
+      - .github/workflows/integration-reviewed-linux.yaml
 
 concurrency:
   group: pr-ci-integration.yaml-${{ github.event_name }}-${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Test networked cluster
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        features:
-          - 'blanket_serde,cluster'
-          - 'blanket_serde,cluster,async-trait'
-    steps:
-      - uses: actions/checkout@main
-
-      - name: Build the docker image
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose build
-
-      - name: Authentication Handshake
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/auth-handshake.env up --exit-code-from node-b
-
-      - name: Process Groups
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/pg-groups.env up --exit-code-from node-b
-
-      - name: Encrypted communications
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/encryption.env up --exit-code-from node-b
-
-      - name: External transport
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/external-transport.env up --exit-code-from node-b
-
-      - name: Transitive connections
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/dist-connect.env up --exit-code-from node-c
-      
+    uses: SatoshiAndKin/ractor/.github/workflows/integration-reviewed-linux.yaml@4e98574a4751a3ceb512ddc18a54e534b9a13acf

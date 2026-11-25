@@ -5,10 +5,8 @@ on:
 permissions:
   contents: read
 
-# Bound compiler memory on the small isolated runners. Keep debug assertions
-# and every matrix test enabled.
+# Reduce compiler memory without changing debug assertions or test selection.
 env:
-  CARGO_BUILD_JOBS: "1"
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: "0"
   CARGO_PROFILE_TEST_DEBUG: "0"
@@ -59,7 +57,7 @@ jobs:
     name: ${{matrix.name}}
     runs-on:
       group: ski-ci-public-linux
-      labels: ski-kvm-public-pr
+      labels: ${{ matrix.runner || 'ski-kvm-public-pr' }}
     strategy:
       fail-fast: false
       matrix:
@@ -77,6 +75,7 @@ jobs:
             package: ractor
             flags: --no-default-features -F tokio_runtime,async-trait,actor-macros
           - name: Test actor macros with async-std and async-trait
+            runner: ski-kvm-public-build
             package: ractor
             flags: --no-default-features -F async-std,async-trait,actor-macros
           - name: Test ractor without span propogation
@@ -89,12 +88,15 @@ jobs:
             package: ractor
             flags: -F blanket_serde
           - name: Test ractor with async-std runtime
+            runner: ski-kvm-public-build
             package: ractor
             flags: --no-default-features -F async-std,message_span_propogation
           - name: Test ractor with async-std runtime but no span propagation
+            runner: ski-kvm-public-build
             package: ractor
             flags: --no-default-features -F async-std
           - name: Test ractor with async-std runtime and async-trait
+            runner: ski-kvm-public-build
             package: ractor
             flags: --no-default-features -F async-std,async-trait
           - name: Test ractor_cluster with native async traits

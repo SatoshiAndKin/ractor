@@ -1,0 +1,40 @@
+name: Install Rust on the K3s Linux runner
+description: Install the requested Rust toolchain with the verified Linux x86-64 rustup installer.
+inputs:
+  toolchain:
+    description: Rust toolchain version
+    default: stable
+  targets:
+    description: Optional additional Rust target
+    default: ""
+  components:
+    description: Optional additional Rust component
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Install rustup and select the toolchain
+      shell: bash
+      env:
+        TOOLCHAIN: ${{ inputs.toolchain }}
+        TARGET: ${{ inputs.targets }}
+        COMPONENT: ${{ inputs.components }}
+      run: |
+        installer="$RUNNER_TEMP/rustup-init"
+        curl --fail --silent --show-error --location --retry 2 \
+          https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-unknown-linux-gnu/rustup-init \
+          --output "$installer"
+        printf '%s  %s\n' b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55 "$installer" | sha256sum --check
+        chmod 0755 "$installer"
+        "$installer" --default-toolchain none --no-modify-path -y
+        cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+        flags=()
+        if [[ -n "$TARGET" ]]; then
+          flags+=(--target "$TARGET")
+        fi
+        if [[ -n "$COMPONENT" ]]; then
+          flags+=(--component "$COMPONENT")
+        fi
+        "$cargo_bin/rustup" toolchain install "$TOOLCHAIN" --profile minimal --no-self-update "${flags[@]}"
+        "$cargo_bin/rustup" default "$TOOLCHAIN"
+        echo "$cargo_bin" >> "$GITHUB_PATH"

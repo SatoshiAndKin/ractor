@@ -1,0 +1,57 @@
+name: Reviewed Ractor cluster integration
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Test networked cluster
+    runs-on:
+      group: ski-ci-public-linux
+      labels: ski-kvm-public-pr
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - 'blanket_serde,cluster'
+          - 'blanket_serde,cluster,async-trait'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the docker image
+        working-directory: .
+        run: |
+          FEATURES=${{matrix.features}} docker compose build
+
+      - name: Authentication Handshake
+        working-directory: .
+        run: |
+          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/auth-handshake.env up --exit-code-from node-b
+
+      - name: Process Groups
+        working-directory: .
+        run: |
+          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/pg-groups.env up --exit-code-from node-b
+
+      - name: Encrypted communications
+        working-directory: .
+        run: |
+          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/encryption.env up --exit-code-from node-b
+
+      - name: External transport
+        working-directory: .
+        run: |
+          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/external-transport.env up --exit-code-from node-b
+
+      - name: Transitive connections
+        working-directory: .
+        run: |
+          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/dist-connect.env up --exit-code-from node-c

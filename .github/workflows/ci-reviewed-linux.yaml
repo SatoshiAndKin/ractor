@@ -5,6 +5,14 @@ on:
 permissions:
   contents: read
 
+# Bound compiler memory on the small isolated runners. Keep debug assertions
+# and every matrix test enabled.
+env:
+  CARGO_BUILD_JOBS: "1"
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
 defaults:
   run:
     shell: bash

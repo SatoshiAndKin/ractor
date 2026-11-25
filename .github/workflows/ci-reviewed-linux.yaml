@@ -140,7 +140,8 @@ jobs:
             exit 1
           fi
 
-      - name: Test everything
+      - name: Test the default workspace
+        if: matrix.name == 'Run the default tests'
         run: cargo test
 
   clippy:

@@ -216,5 +216,11 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Compile benchmarks
+      - name: Compile library and binary benchmark harnesses
+        if: github.event_name == 'pull_request'
+        # Benchmark Comparison compiles and runs the explicit Criterion targets.
+        run: cargo bench --no-run --lib --bins
+
+      - name: Compile all benchmarks
+        if: github.event_name != 'pull_request'
         run: cargo bench --no-run

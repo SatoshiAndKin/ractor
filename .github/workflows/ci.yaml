@@ -15,4 +15,4 @@ permissions:
 
 jobs:
   test:
-    uses: SatoshiAndKin/ractor/.github/workflows/ci-reviewed-linux.yaml@94969061aec45f869beb908f097c1ceab9f959ea
+    uses: SatoshiAndKin/ractor/.github/workflows/ci-reviewed-linux.yaml@c449163580f6b5e3b401a9d44caf88f09412e962

@@ -75,12 +75,6 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Download base baseline
-        if: needs.bench-base.result == 'success'
-        uses: actions/download-artifact@v8
-        with:
-          name: bench-baseline-base
-
       - name: Run benchmarks on PR branch
         run: |
           cargo bench -p ractor \
@@ -94,6 +88,12 @@ jobs:
             -- --save-baseline pr
         env:
           CI: 1
+
+      - name: Download base baseline
+        if: needs.bench-base.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: bench-baseline-base
 
       - name: Install critcmp
         if: needs.bench-base.result == 'success'

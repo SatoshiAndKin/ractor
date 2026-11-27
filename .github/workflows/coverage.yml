@@ -44,11 +44,19 @@ jobs:
           LLVM_PROFILE_FILE: cargo-test-%p-%m.profraw
         run: cargo test --package ractor --features actor-macros --test actor_macros
 
-      - name: Run xtask coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: run
-          args: --bin xtask coverage
+      - name: Run instrumented tests and coverage
+        env:
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: -Cinstrument-coverage
+          LLVM_PROFILE_FILE: cargo-test-%p-%m.profraw
+        run: |
+          cargo test --workspace
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -er .target_directory)
+          mkdir -p coverage
+          # New Cargo releases put test binaries below debug/build, not debug/deps.
+          grcov . --binary-path "$target_dir/debug" -s . -t lcov --branch \
+            --ignore-not-existing --ignore '../*' --ignore '/*' \
+            --ignore 'xtask/*' --ignore '*/src/tests/*' -o coverage/tests.lcov
 
 
       - name: Upload to codecov.io

@@ -269,6 +269,8 @@ impl ActorProperties {
 
     pub(crate) fn drain(&self) -> Result<(), MessagingErr<()>> {
         self.close_message_admission();
+        // try_update is newer than the supported Rust 1.85 compiler.
+        #[allow(deprecated)]
         let _ = self
             .status
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |f| {

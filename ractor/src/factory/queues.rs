@@ -292,8 +292,8 @@ where
 
     /// Pop the next message from the front of the queue
     fn pop_front(&mut self) -> Option<Job<TKey, TMsg>> {
-        for i in 0..NUM_PRIORITIES {
-            if let Some(r) = self.queues[i].pop_front() {
+        for queue in &mut self.queues {
+            if let Some(r) = queue.pop_front() {
                 return Some(r);
             }
         }
@@ -310,8 +310,8 @@ where
     }
 
     fn peek(&self) -> Option<&Job<TKey, TMsg>> {
-        for i in 0..NUM_PRIORITIES {
-            let maybe = self.queues[i].front();
+        for queue in &self.queues {
+            let maybe = queue.front();
             if maybe.is_some() {
                 return maybe;
             }
@@ -337,8 +337,8 @@ where
         let mut num_removed = 0;
 
         // scan backlog for expired jobs and pop, discard, and drop them
-        for i in 0..NUM_PRIORITIES {
-            self.queues[i].retain_mut(|queued_item| {
+        for queue in &mut self.queues {
+            queue.retain_mut(|queued_item| {
                 if queued_item.is_expired() {
                     if let Some(handler) = discard_handler {
                         handler.discard(DiscardReason::TtlExpired, queued_item);

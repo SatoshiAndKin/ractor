@@ -35,6 +35,8 @@ pub type FactoryMessagingErr<TKey, TMsg> = MessagingErr<FactoryMessage<TKey, TMs
 /// [`MessagingErr::SendErr`] still owns the recoverable [`FactoryMessage`].
 pub type FactorySendResult<TKey, TMsg> = Result<(), Box<FactoryMessagingErr<TKey, TMsg>>>;
 
+// Call and query helpers retain ActorRef::call's unboxed error contract.
+#[allow(clippy::result_large_err)]
 impl<TKey, TMsg> ActorRef<FactoryMessage<TKey, TMsg>>
 where
     TKey: JobKey,

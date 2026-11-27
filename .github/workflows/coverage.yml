@@ -23,11 +23,11 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.rust }}
-          override: true
-          components: llvm-tools-preview
+        env:
+          RUST_TOOLCHAIN: ${{ matrix.rust }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component llvm-tools-preview
+          rustup override set "$RUST_TOOLCHAIN"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -35,7 +35,7 @@ jobs:
         run: |
           mkdir -p "${HOME}/.local/bin"
           curl -sL https://github.com/mozilla/grcov/releases/download/v0.8.10/grcov-x86_64-unknown-linux-gnu.tar.bz2 | tar jxf - -C "${HOME}/.local/bin"
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Exercise actor macros for coverage
         env:
@@ -44,14 +44,47 @@ jobs:
           LLVM_PROFILE_FILE: cargo-test-%p-%m.profraw
         run: cargo test --package ractor --features actor-macros --test actor_macros
 
-      - name: Run xtask coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: run
-          args: --bin xtask coverage
+      - name: Run instrumented tests and coverage
+        env:
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: -Cinstrument-coverage
+          LLVM_PROFILE_FILE: cargo-test-%p-%m.profraw
+        run: |
+          cargo test --workspace
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -er .target_directory)
+          mkdir -p coverage
+          # New Cargo releases put test binaries below debug/build, not debug/deps.
+          grcov . --binary-path "$target_dir/debug" -s . -t lcov --branch \
+            --ignore-not-existing --ignore '../*' --ignore '/*' \
+            --ignore 'xtask/*' --ignore '*/src/tests/*' -o coverage/tests.lcov
 
+
+      - name: Verify nonempty coverage
+        run: |
+          test -s coverage/tests.lcov
+          grep -Eq '^DA:[0-9]+,[1-9][0-9]*(,|$)' coverage/tests.lcov
+
+      - name: Keep the coverage report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: coverage-lcov
+          path: coverage/tests.lcov
+          if-no-files-found: error
+
+      - name: Select optional Codecov publication
+        id: codecov
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -n "$CODECOV_TOKEN" ]; then
+            echo enabled=true >> "$GITHUB_OUTPUT"
+          else
+            echo enabled=false >> "$GITHUB_OUTPUT"
+            echo 'Codecov token is not configured; the verified LCOV artifact is retained.'
+          fi
 
       - name: Upload to codecov.io
+        if: ${{ steps.codecov.outputs.enabled == 'true' }}
         uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true # optional (default = false)

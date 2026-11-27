@@ -1,20 +1,27 @@
+---
 name: Ractor Cluster integration tests
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'ractor_cluster*/**'
-  pull_request:
-    types: [opened, reopened, synchronize]
-    paths:
-      - 'ractor_cluster*/**'
-
 concurrency:
   group: pr-ci-integration.yaml-${{ github.event_name }}-${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
-
 jobs:
+  ci_changes:
+    name: Select validation paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_validation: "${{ steps.paths.outputs.run_validation }}"
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - id: paths
+      env:
+        GH_TOKEN: "${{ github.token }}"
+        CI_INCLUDE_PATHS: '["ractor_cluster*/**"]'
+        CI_IGNORE_PATHS: "[]"
+      run: python3 .github/scripts/ci_changes.py
   test:
     name: Test networked cluster
     runs-on: ubuntu-latest
@@ -22,38 +29,71 @@ jobs:
       fail-fast: false
       matrix:
         features:
-          - 'blanket_serde,cluster'
-          - 'blanket_serde,cluster,async-trait'
+        - blanket_serde,cluster
+        - blanket_serde,cluster,async-trait
     steps:
-      - uses: actions/checkout@main
+    - uses: actions/checkout@main
+    - name: Build the docker image
+      working-directory: "."
+      run: 'FEATURES=${{matrix.features}} docker compose build
 
-      - name: Build the docker image
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose build
+        '
+    - name: Authentication Handshake
+      working-directory: "."
+      run: 'FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/auth-handshake.env up --exit-code-from node-b
 
-      - name: Authentication Handshake
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/auth-handshake.env up --exit-code-from node-b
+        '
+    - name: Process Groups
+      working-directory: "."
+      run: 'FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/pg-groups.env up --exit-code-from node-b
 
-      - name: Process Groups
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/pg-groups.env up --exit-code-from node-b
+        '
+    - name: Encrypted communications
+      working-directory: "."
+      run: 'FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/encryption.env up --exit-code-from node-b
 
-      - name: Encrypted communications
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/encryption.env up --exit-code-from node-b
+        '
+    - name: External transport
+      working-directory: "."
+      run: 'FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/external-transport.env up --exit-code-from node-b
 
-      - name: External transport
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/external-transport.env up --exit-code-from node-b
+        '
+    - name: Transitive connections
+      working-directory: "."
+      run: 'FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/dist-connect.env up --exit-code-from node-c
 
-      - name: Transitive connections
-        working-directory: .
-        run: |
-          FEATURES=${{matrix.features}} docker compose --env-file ./ractor_cluster_integration_tests/envs/dist-connect.env up --exit-code-from node-c
-      
+        '
+    needs:
+    - ci_changes
+    if: "${{ needs.ci_changes.outputs.run_validation == 'true' }}"
+  ci_gate:
+    name: CI (integration.yaml)
+    if: "${{ !cancelled() }}"
+    needs:
+    - ci_changes
+    - test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Verify validation contract
+      env:
+        CI_GATE_NEEDS: "${{ toJSON(needs) }}"
+        CI_EXPECTED_JOBS: '["test"]'
+      run: |-
+        python3 -m unittest discover -s .github/scripts -p test_ci_contract.py
+        python3 .github/scripts/ci_gate.py
+'on':
+  push:
+    branches:
+    - main
+    paths:
+    - ractor_cluster*/**
+  pull_request:
+    types:
+    - opened
+    - reopened
+    - synchronize
